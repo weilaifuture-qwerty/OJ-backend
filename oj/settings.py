@@ -267,3 +267,12 @@ RAVEN_CONFIG = {
 IP_HEADER = "HTTP_X_REAL_IP"
 
 DEFAULT_AUTO_FIELD='django.db.models.AutoField'
+
+# Apply timezone patch for PostgreSQL UTC issue
+try:
+    from utils.timezone_patch import apply_timezone_patch
+    apply_timezone_patch()
+except Exception as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Could not apply timezone patch: {e}")

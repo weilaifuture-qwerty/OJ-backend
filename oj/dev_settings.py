@@ -8,10 +8,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'onlinejudge',
-        'USER': 'postgres',
-        'PASSWORD': 'postgres',
+        'USER': 'onlinejudge',
+        'PASSWORD': 'onlinejudge',
         'HOST': 'localhost',
-        'PORT': '5432',
+        'PORT': '5435',
         'OPTIONS': {
             'options': '-c TimeZone=UTC'
         },
