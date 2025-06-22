@@ -1,8 +1,9 @@
 import os
-from datetime import timedelta
+from datetime import timedelta, date
 from importlib import import_module
 
 import qrcode
+from PIL import Image
 from django.conf import settings
 from django.contrib import auth
 from django.template.loader import render_to_string
@@ -18,7 +19,7 @@ from utils.api import APIView, validate_serializer, CSRFExemptAPIView
 from utils.captcha import Captcha
 from utils.shortcuts import rand_str, img2base64, datetime2str
 from ..decorators import login_required
-from ..models import User, UserProfile, AdminType
+from ..models import User, UserProfile, AdminType, UserStreak, DailyCheckIn
 from ..serializers import (ApplyResetPasswordSerializer, ResetPasswordSerializer,
                            UserChangePasswordSerializer, UserLoginSerializer,
                            UserRegisterSerializer, UsernameOrEmailCheckSerializer,
@@ -48,7 +49,7 @@ class UserProfileAPI(APIView):
                 show_real_name = True
         except User.DoesNotExist:
             return self.error("User does not exist")
-        return self.success(UserProfileSerializer(user.userprofile, show_real_name=show_real_name).data)
+        return self.success(UserProfileSerializer(user.userprofile, show_real_name=show_real_name, context={'request': request}).data)
 
     @validate_serializer(EditUserProfileSerializer)
     @login_required
@@ -56,9 +57,12 @@ class UserProfileAPI(APIView):
         data = request.data
         user_profile = request.user.userprofile
         for k, v in data.items():
+            # Skip avatar field if it's empty to prevent overwriting existing avatar
+            if k == 'avatar' and not v:
+                continue
             setattr(user_profile, k, v)
         user_profile.save()
-        return self.success(UserProfileSerializer(user_profile, show_real_name=True).data)
+        return self.success(UserProfileSerializer(user_profile, show_real_name=True, context={'request': request}).data)
 
 
 class AvatarUploadAPI(APIView):
@@ -72,20 +76,103 @@ class AvatarUploadAPI(APIView):
         else:
             return self.error("Invalid file content")
         if avatar.size > 2 * 1024 * 1024:
-            return self.error("Picture is too large")
+            return self.error("Picture is too large (max 2MB)")
         suffix = os.path.splitext(avatar.name)[-1].lower()
         if suffix not in [".gif", ".jpg", ".jpeg", ".bmp", ".png"]:
             return self.error("Unsupported file format")
 
-        name = rand_str(10) + suffix
-        with open(os.path.join(settings.AVATAR_UPLOAD_DIR, name), "wb") as img:
-            for chunk in avatar:
-                img.write(chunk)
         user_profile = request.user.userprofile
+        
+        # Delete old avatar if it's not the default one
+        old_avatar = user_profile.avatar
+        if old_avatar and not old_avatar.endswith("default.png"):
+            old_avatar_path = old_avatar.replace(settings.AVATAR_URI_PREFIX, settings.AVATAR_UPLOAD_DIR)
+            if os.path.exists(old_avatar_path):
+                try:
+                    os.remove(old_avatar_path)
+                except:
+                    pass  # Ignore errors when deleting old avatar
 
+        # Generate new filename
+        name = rand_str(10) + suffix
+        avatar_path = os.path.join(settings.AVATAR_UPLOAD_DIR, name)
+        
+        # Save and process the image
+        try:
+            # Open and process the image
+            img = Image.open(avatar)
+            
+            # Convert RGBA to RGB if necessary
+            if img.mode == 'RGBA':
+                # Create a white background
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+                img = background
+            elif img.mode not in ['RGB', 'L']:
+                img = img.convert('RGB')
+            
+            # Calculate dimensions for a square crop
+            width, height = img.size
+            min_dimension = min(width, height)
+            
+            # Calculate crop box for center square
+            left = (width - min_dimension) // 2
+            top = (height - min_dimension) // 2
+            right = left + min_dimension
+            bottom = top + min_dimension
+            
+            # Crop to square
+            img = img.crop((left, top, right, bottom))
+            
+            # Resize to 200x200 pixels
+            img = img.resize((200, 200), Image.Resampling.LANCZOS)
+            
+            # Save the processed image
+            if suffix == '.png':
+                img.save(avatar_path, 'PNG', optimize=True)
+            else:
+                img.save(avatar_path, 'JPEG', quality=90, optimize=True)
+                
+        except Exception as e:
+            return self.error(f"Failed to process image: {str(e)}")
+
+        # Update user profile
         user_profile.avatar = f"{settings.AVATAR_URI_PREFIX}/{name}"
         user_profile.save()
-        return self.success("Succeeded")
+        
+        # Build absolute URL for the response
+        avatar_url = request.build_absolute_uri(user_profile.avatar)
+        
+        return self.success({
+            "avatar": avatar_url,
+            "message": "Avatar uploaded successfully"
+        })
+    
+    @login_required
+    def delete(self, request):
+        """Delete user's custom avatar and revert to default"""
+        user_profile = request.user.userprofile
+        
+        # Delete current avatar if it's not the default one
+        if user_profile.avatar and not user_profile.avatar.endswith("default.png"):
+            avatar_path = user_profile.avatar.replace(settings.AVATAR_URI_PREFIX, settings.AVATAR_UPLOAD_DIR)
+            if os.path.exists(avatar_path):
+                try:
+                    os.remove(avatar_path)
+                except:
+                    pass
+        
+        # Set back to default avatar
+        user_profile.avatar = f"{settings.AVATAR_URI_PREFIX}/default.png"
+        user_profile.save()
+        
+        # Build absolute URL for the response
+        avatar_url = request.build_absolute_uri(user_profile.avatar)
+        
+        return self.success({
+            "avatar": avatar_url,
+            "message": "Avatar reset to default"
+        })
 
 
 class TwoFactorAuthAPI(APIView):
@@ -161,6 +248,7 @@ class UserLoginAPI(APIView):
         data = request.data
         try:
             user = auth.authenticate(username=data["username"], password=data["password"])
+            print(data, user)
             # None is returned if username or password is wrong
             if user is None:
                 return self.error("Invalid username or password")
@@ -453,3 +541,180 @@ class SSOAPI(CSRFExemptAPIView):
         except User.DoesNotExist:
             return self.error("User does not exist")
         return self.success({"username": user.username, "avatar": user.userprofile.avatar, "admin_type": user.admin_type})
+
+
+class UserStreakAPI(APIView):
+    @login_required
+    def get(self, request):
+        """Get user's streak information"""
+        try:
+            user = request.user
+            
+            # Get or create user streak
+            streak, created = UserStreak.objects.get_or_create(user=user)
+            
+            # Get check-in days for current month
+            today = date.today()
+            first_day = today.replace(day=1)
+            check_ins = DailyCheckIn.objects.filter(
+                user=user,
+                check_in_date__gte=first_day
+            ).values_list('check_in_date', flat=True)
+            
+            return self.success({
+                'current_streak': streak.current_streak,
+                'best_streak': streak.best_streak,
+                'last_check_in': streak.last_check_in.isoformat() if streak.last_check_in else None,
+                'check_in_days': [d.isoformat() for d in check_ins]
+            })
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in user streak API: {str(e)}")
+            return self.error(f"An error occurred: {str(e)}")
+
+
+class DailyCheckInAPI(APIView):
+    @login_required
+    def post(self, request):
+        """Record daily check-in"""
+        try:
+            user = request.user
+            today = date.today()
+            
+            # Log the attempt
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Check-in attempt for user: {user.username} on {today}")
+            
+            # Check if already checked in today
+            existing_checkin = DailyCheckIn.objects.filter(user=user, check_in_date=today).exists()
+            if existing_checkin:
+                logger.info(f"User {user.username} already checked in today")
+                return self.error('Already checked in today')
+            
+            # Create check-in record
+            checkin = DailyCheckIn.objects.create(user=user, check_in_date=today)
+            logger.info(f"Created check-in for user {user.username}: ID={checkin.id}, date={checkin.check_in_date}")
+            
+            # Update streak
+            streak, created = UserStreak.objects.get_or_create(user=user)
+            
+            # Check if streak continues
+            yesterday = today - timedelta(days=1)
+            
+            # Check if user checked in yesterday to continue the streak
+            yesterday_checkin_exists = DailyCheckIn.objects.filter(
+                user=user,
+                check_in_date=yesterday
+            ).exists()
+            
+            if yesterday_checkin_exists and streak.current_streak > 0:
+                # Continue streak
+                streak.current_streak += 1
+            else:
+                # Start new streak
+                streak.current_streak = 1
+            
+            # Update best streak if needed
+            if streak.current_streak > streak.best_streak:
+                streak.best_streak = streak.current_streak
+            
+            # Update last check-in time
+            streak.last_check_in = now()
+            streak.save()
+            
+            logger.info(f"Updated streak for user {user.username}: current={streak.current_streak}, best={streak.best_streak}")
+            
+            # Get updated check-in days
+            first_day = today.replace(day=1)
+            check_ins = DailyCheckIn.objects.filter(
+                user=user,
+                check_in_date__gte=first_day
+            ).values_list('check_in_date', flat=True)
+            
+            logger.info(f"Check-in days for {user.username} this month: {[d.isoformat() for d in check_ins]}")
+            
+            return self.success({
+                'current_streak': streak.current_streak,
+                'best_streak': streak.best_streak,
+                'last_check_in': streak.last_check_in.isoformat() if streak.last_check_in else None,
+                'check_in_days': [d.isoformat() for d in check_ins]
+            })
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in daily check-in: {str(e)}")
+            return self.error(f"An error occurred: {str(e)}")
+
+
+class CheckAuthAPI(APIView):
+    def get(self, request):
+        """Debug endpoint to check authentication status"""
+        if request.user.is_authenticated:
+            return self.success({
+                'authenticated': True,
+                'username': request.user.username,
+                'user_id': request.user.id
+            })
+        else:
+            return self.success({
+                'authenticated': False,
+                'message': 'User is not authenticated'
+            })
+
+
+class UserAvatarAPI(APIView):
+    def get(self, request):
+        """Get user avatar by username"""
+        username = request.GET.get('username')
+        if not username:
+            return self.error("Username is required")
+        
+        try:
+            user = User.objects.get(username=username)
+            avatar_url = user.userprofile.avatar
+            return self.success({
+                'username': username,
+                'avatar': avatar_url
+            })
+        except User.DoesNotExist:
+            return self.error("User not found")
+
+
+class UserStatusAPI(APIView):
+    @login_required
+    def get(self, request):
+        """Get current user's status"""
+        profile = request.user.userprofile
+        return self.success({
+            'status': profile.status,
+            'status_message': profile.status_message,
+            'mood_emoji': profile.mood_emoji,
+            'mood_clear_at': profile.mood_clear_at.isoformat() if profile.mood_clear_at else None,
+            'status_color': profile.status_color
+        })
+    
+    @login_required
+    @validate_serializer(EditUserProfileSerializer)
+    def put(self, request):
+        """Update user's status"""
+        data = request.data
+        profile = request.user.userprofile
+        
+        # Update only status-related fields
+        status_fields = ['status', 'status_message', 'mood_emoji', 'mood_clear_at', 'status_color']
+        
+        for field in status_fields:
+            if field in data:
+                setattr(profile, field, data[field])
+        
+        profile.save()
+        
+        return self.success({
+            'status': profile.status,
+            'status_message': profile.status_message,
+            'mood_emoji': profile.mood_emoji,
+            'mood_clear_at': profile.mood_clear_at.isoformat() if profile.mood_clear_at else None,
+            'status_color': profile.status_color
+        })

@@ -70,6 +70,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     real_name = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
@@ -81,6 +82,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_real_name(self, obj):
         return obj.real_name if self.show_real_name else None
+    
+    def get_avatar(self, obj):
+        if obj.avatar:
+            request = self.context.get('request')
+            if request and not obj.avatar.startswith('http'):
+                return request.build_absolute_uri(obj.avatar)
+            return obj.avatar
+        return None
 
 
 class EditUserSerializer(serializers.Serializer):
@@ -106,6 +115,21 @@ class EditUserProfileSerializer(serializers.Serializer):
     school = serializers.CharField(max_length=64, allow_blank=True, required=False)
     major = serializers.CharField(max_length=64, allow_blank=True, required=False)
     language = serializers.CharField(max_length=32, allow_blank=True, required=False)
+    
+    # Status System Fields
+    status = serializers.ChoiceField(
+        choices=['practicing', 'learning', 'competing', 'debugging', 'reviewing', 'resting'],
+        required=False
+    )
+    status_message = serializers.CharField(max_length=100, allow_blank=True, required=False)
+    mood_emoji = serializers.CharField(max_length=10, allow_blank=True, required=False)
+    mood_clear_at = serializers.DateTimeField(required=False, allow_null=True)
+    status_color = serializers.RegexField(
+        regex=r'^#[0-9A-Fa-f]{6}$',
+        max_length=7,
+        required=False,
+        error_messages={'invalid': 'Invalid color format. Use hex format like #52c41a'}
+    )
 
 
 class ApplyResetPasswordSerializer(serializers.Serializer):
@@ -153,3 +177,9 @@ class CreateUserSerializer(serializers.Serializer):
     open_api = serializers.BooleanField(default=False)
     two_factor_auth = serializers.BooleanField(default=False)
     is_disabled = serializers.BooleanField(default=False)
+
+
+class SimpleCreateUserSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=32)
+    password = serializers.CharField(min_length=6)
+    real_name = serializers.CharField(max_length=32, allow_blank=True, default="")

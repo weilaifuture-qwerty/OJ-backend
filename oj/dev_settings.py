@@ -13,7 +13,7 @@ DATABASES = {
         'HOST': 'localhost',
         'PORT': '5432',
         'OPTIONS': {
-            'options': '-c TimeZone=UTC'
+            'options': '-c timezone=UTC'
         },
     }
 }
@@ -30,4 +30,4 @@ ALLOWED_HOSTS = ["*"]
 DATA_DIR = f"{BASE_DIR}/data"
 
 # CSRF settings
-CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:8000', 'http://localhost:8080/', 'http://192.168.0.191:8080/']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:8000', 'http://localhost:8080', 'http://192.168.0.191:8080']

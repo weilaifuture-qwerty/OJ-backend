@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractBaseUser
 from django.conf import settings
 from django.db import models
 from utils.models import JSONField
+from datetime import date
 
 
 class AdminType(object):
@@ -67,6 +68,15 @@ class User(AbstractBaseUser):
 
 
 class UserProfile(models.Model):
+    STATUS_CHOICES = [
+        ('practicing', 'Practicing'),
+        ('learning', 'Learning'),
+        ('competing', 'In Contest'),
+        ('debugging', 'Debugging'),
+        ('reviewing', 'Reviewing'),
+        ('resting', 'Taking Break')
+    ]
+    
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     # acm_problems_status examples:
     # {
@@ -100,6 +110,17 @@ class UserProfile(models.Model):
     # for OI
     total_score = models.BigIntegerField(default=0)
     submission_number = models.IntegerField(default=0)
+    
+    # Status System Fields
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='practicing'
+    )
+    status_message = models.CharField(max_length=100, blank=True, null=True)  # Status message (renamed from mood to avoid conflict)
+    mood_emoji = models.CharField(max_length=10, blank=True, null=True)  # Emoji
+    mood_clear_at = models.DateTimeField(blank=True, null=True)  # Auto-clear time
+    status_color = models.CharField(max_length=7, default='#52c41a')  # Hex color
 
     def add_accepted_problem_number(self):
         self.accepted_number = models.F("accepted_number") + 1
@@ -117,3 +138,54 @@ class UserProfile(models.Model):
 
     class Meta:
         db_table = "user_profile"
+
+
+class UserStreak(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='streak')
+    current_streak = models.IntegerField(default=0)
+    best_streak = models.IntegerField(default=0)
+    last_check_in = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "user_streak"
+
+
+class DailyCheckIn(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='check_ins')
+    check_in_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = "daily_check_in"
+        unique_together = ('user', 'check_in_date')
+        ordering = ['-check_in_date']
+
+
+class UserPracticeProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practice_profile')
+    skill_level = models.FloatField(default=0.5)  # 0-1 scale
+    strongest_tags = JSONField(default=list)
+    weakest_tags = JSONField(default=list)
+    avg_difficulty_solved = models.FloatField(default=0)
+    last_analyzed = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "user_practice_profile"
+
+
+class ProblemRecommendation(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='problem_recommendations')
+    problem_id = models.IntegerField()  # We'll use problem ID instead of ForeignKey to avoid circular imports
+    match_score = models.FloatField()
+    ai_reason = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    clicked = models.BooleanField(default=False)
+    solved = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = "problem_recommendation"
+        ordering = ['-created_at', '-match_score']
+        # Add unique constraint to prevent duplicate problem recommendations for a user
+        unique_together = ('user', 'problem_id')

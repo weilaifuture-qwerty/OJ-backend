@@ -14,7 +14,7 @@ from utils.shortcuts import rand_str
 from ..decorators import super_admin_required
 from ..models import AdminType, ProblemPermission, User, UserProfile
 from ..serializers import EditUserSerializer, UserAdminSerializer, GenerateUserSerializer, CreateUserSerializer
-from ..serializers import ImportUserSeralizer
+from ..serializers import ImportUserSeralizer, SimpleCreateUserSerializer
 
 
 class UserAdminAPI(APIView):
@@ -250,3 +250,50 @@ class CreateUserAPI(APIView):
             return self.success(UserAdminSerializer(user).data)
         except IntegrityError as e:
             return self.error(str(e).split("\n")[1])
+
+
+class SimpleCreateUserAPI(APIView):
+    @validate_serializer(SimpleCreateUserSerializer)
+    @super_admin_required
+    def post(self, request):
+        """
+        Simple create user API - only username, password, and real name required
+        No authentication methods (2FA, API key) are enabled
+        """
+        data = request.data
+        
+        # Check if username already exists
+        if User.objects.filter(username=data["username"].lower()).exists():
+            return self.error("Username already exists")
+        
+        # Generate a default email if not provided
+        default_email = f"{data['username'].lower()}@example.com"
+        
+        # Create user with minimal settings
+        user = User(
+            username=data["username"].lower(),
+            email=default_email,
+            admin_type=AdminType.REGULAR_USER,  # Default to regular user
+            problem_permission=ProblemPermission.NONE,  # No special permissions
+            open_api=False,  # No API access
+            two_factor_auth=False,  # No 2FA
+            is_disabled=False  # Account is active
+        )
+        user.set_password(data["password"])
+        
+        try:
+            with transaction.atomic():
+                user.save()
+                # Create user profile with real name
+                UserProfile.objects.create(
+                    user=user,
+                    real_name=data.get("real_name", "")
+                )
+            return self.success({
+                "username": user.username,
+                "email": user.email,
+                "real_name": data.get("real_name", ""),
+                "message": "User created successfully"
+            })
+        except IntegrityError as e:
+            return self.error(f"Database error: {str(e)}")

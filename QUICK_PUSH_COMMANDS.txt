@@ -1,0 +1,22 @@
+QUICK GIT PUSH COMMANDS
+======================
+
+Copy and paste these commands in your terminal:
+
+cd /Users/weilai/Desktop/Fufu_website/website10/OJ/OnlineJudge
+git add .
+git commit -m "Add daily check-in, AI suggestions, homework system, avatar upload, and user status features"
+git push origin main
+
+If asked for credentials:
+- Username: weilaifuture-qwerty
+- Password: Use your GitHub personal access token (not your account password)
+
+To create a personal access token:
+1. Go to: https://github.com/settings/tokens
+2. Click "Generate new token (classic)"
+3. Give it a name and select 'repo' scope
+4. Copy the token and use it as your password
+
+That's it! Your code will be pushed to:
+https://github.com/weilaifuture-qwerty/OJ-backend

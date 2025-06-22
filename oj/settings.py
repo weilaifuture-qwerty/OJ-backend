@@ -35,6 +35,7 @@ VENDOR_APPS = [
     'rest_framework',
     'django_dramatiq',
     'django_dbconn_retry',
+    'corsheaders',
 ]
 
 if production_env:
@@ -51,12 +52,14 @@ LOCAL_APPS = [
     'submission',
     'options',
     'judge',
+    'homework',
 ]
 
 INSTALLED_APPS = VENDOR_APPS + LOCAL_APPS
 
 MIDDLEWARE = (
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -198,6 +201,30 @@ REST_FRAMEWORK = {
 
 # # CSRF Settings
 # CSRF_COOKIE_SAMESITE = 'None'  # Allow cross-origin
+
+# CORS Settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+# CSRF Settings
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:8000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+]
+
+# Session Settings for development
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = False
 # CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read the cookie
 # CSRF_TRUSTED_ORIGINS = [
 #     'http://localhost:8080',
