@@ -10,6 +10,8 @@ from ..views.oj import (ApplyResetPasswordAPI, ResetPasswordAPI,
                         UserStatusAPI)
 from ..views.ai_suggestions import ProblemSuggestionsAPI, UserPracticeHistoryAPI
 from ..views import get_csrf_token
+from ..views.users import UsersAPI, StudentsByGroupAPI, UpdateStudentGroupAPI, AvailableGroupsAPI, StudentsByGroupNameAPI
+from ..views.debug_groups import DebugGroupsAPI
 
 from utils.captcha.views import CaptchaAPIView
 
@@ -39,5 +41,15 @@ urlpatterns = [
     re_path(r"^problem_suggestions/?$", ProblemSuggestionsAPI.as_view(), name="problem_suggestions_api"),
     re_path(r"^user_practice_history/?$", UserPracticeHistoryAPI.as_view(), name="user_practice_history_api"),
     re_path(r"^user_avatar/?$", UserAvatarAPI.as_view(), name="user_avatar_api"),
-    re_path(r"^user_status/?$", UserStatusAPI.as_view(), name="user_status_api")
+    re_path(r"^user_status/?$", UserStatusAPI.as_view(), name="user_status_api"),
+    
+    # User management endpoints
+    re_path(r"^users/?$", UsersAPI.as_view(), name="users_api"),
+    re_path(r"^students_by_group/?$", StudentsByGroupAPI.as_view(), name="students_by_group_api"),
+    re_path(r"^students/group/(?P<group_name>[\w\s-]+)/?$", StudentsByGroupNameAPI.as_view(), name="students_by_group_name_api"),
+    re_path(r"^update_student_group/?$", UpdateStudentGroupAPI.as_view(), name="update_student_group_api"),
+    re_path(r"^available_groups/?$", AvailableGroupsAPI.as_view(), name="available_groups_api"),
+    
+    # Debug endpoint (remove in production)
+    re_path(r"^debug_groups/?$", DebugGroupsAPI.as_view(), name="debug_groups_api")
 ]

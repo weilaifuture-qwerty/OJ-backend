@@ -297,3 +297,40 @@ class SimpleCreateUserAPI(APIView):
             })
         except IntegrityError as e:
             return self.error(f"Database error: {str(e)}")
+
+
+class AdminListAPI(APIView):
+    """Get list of admin users for assignment purposes"""
+    
+    @super_admin_required
+    def get(self, request):
+        """Get all admin users"""
+        # Get all users with admin privileges
+        admins = User.objects.filter(
+            admin_type__in=[AdminType.ADMIN, AdminType.SUPER_ADMIN]
+        ).select_related('userprofile').order_by('username')
+        
+        admin_data = []
+        for admin in admins:
+            # Count students assigned to this admin
+            # Import here to avoid circular import
+            try:
+                from homework.models import AdminStudentRelation
+                student_count = AdminStudentRelation.objects.filter(
+                    admin=admin, 
+                    is_active=True
+                ).count()
+            except ImportError:
+                # If homework app is not available, just set count to 0
+                student_count = 0
+            
+            admin_data.append({
+                'id': admin.id,
+                'username': admin.username,
+                'email': admin.email,
+                'real_name': admin.userprofile.real_name if hasattr(admin, 'userprofile') else '',
+                'admin_type': admin.admin_type,
+                'student_count': student_count
+            })
+        
+        return self.success(admin_data)

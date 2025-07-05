@@ -48,6 +48,7 @@ class HomeworkAssignment(models.Model):
     allow_late_submission = models.BooleanField(default=False)
     late_penalty_percent = models.IntegerField(default=0)  # Percentage penalty per day late
     max_attempts = models.IntegerField(default=0)  # 0 means unlimited
+    auto_grade = models.BooleanField(default=True)  # Automatically calculate grades based on AC submissions
     
     class Meta:
         db_table = "homework_assignment"

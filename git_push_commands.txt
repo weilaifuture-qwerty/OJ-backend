@@ -1,0 +1,33 @@
+# Git Push Commands for OnlineJudge
+
+## BACKEND - Quick Push (All Changes)
+git add .
+git commit -m "Implement homework backend endpoints, user group management, and A+B problem"
+git push origin main
+
+## BACKEND - Selective Push (Recommended)
+# Add homework endpoints
+git add account/views/users.py
+git add homework/views/admin.py homework/views/oj.py
+git add homework/urls/admin.py homework/urls/oj.py
+
+# Add A+B problem
+git add create_ab_problem.py CREATE_AB_PROBLEM_GUIDE.md
+git add problem/management/
+
+# Add key documentation
+git add JUDGE_SERVER_SETUP.md HOMEWORK_ENDPOINTS_SUMMARY.md
+
+# Commit and push
+git commit -m "feat: Add homework API endpoints and A+B problem setup"
+git push origin main
+
+## FRONTEND - Push Layout Fixes
+cd /Users/weilai/Desktop/Fufu_website/website10/OJ/attempt2/OnlineJudgeFE
+git add src/styles/global-layout-fix.less
+git add src/pages/oj/components/NavBar.vue
+git add src/pages/oj/App.vue
+git add src/pages/oj/views/general/Home.vue
+git commit -m "fix: Resolve navbar layout issues and remove debug tools"
+git push origin main
+EOF < /dev/null

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Student Dropdown APIs</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .error { color: red; }
+        .success { color: green; }
+        pre { background: #f4f4f4; padding: 10px; overflow: auto; }
+        button { margin: 5px; padding: 8px 15px; cursor: pointer; }
+        select { padding: 5px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Test Student Dropdown APIs</h1>
+    
+    <div class="section">
+        <h2>API Tests</h2>
+        <button onclick="testAPI('/api/debug_groups')">Test Debug Groups</button>
+        <button onclick="testAPI('/api/available_groups')">Test Available Groups</button>
+        <button onclick="testAPI('/api/available_students')">Test Available Students</button>
+        <button onclick="testAPI('/api/students_by_group')">Test Students by Group</button>
+        <button onclick="testAPI('/api/users?type=student')">Test Users API</button>
+    </div>
+    
+    <div class="section">
+        <h2>Mock Dropdown</h2>
+        <label>Select Group:</label>
+        <select id="groupSelect" onchange="filterByGroup()">
+            <option value="">All Groups</option>
+        </select>
+        <br><br>
+        <label>Select Students:</label>
+        <select id="studentSelect" multiple size="10" style="width: 300px;">
+            <option>Loading...</option>
+        </select>
+    </div>
+    
+    <div class="section">
+        <h2>API Response:</h2>
+        <pre id="output">Click a button to test an API</pre>
+    </div>
+    
+    <script>
+        // Test API function
+        async function testAPI(endpoint) {
+            const output = document.getElementById('output');
+            output.textContent = `Testing ${endpoint}...`;
+            
+            try {
+                const response = await fetch(endpoint, {
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    output.innerHTML = `<span class="success">✓ Success (${response.status})</span>\n`;
+                    output.innerHTML += JSON.stringify(data, null, 2);
+                    
+                    // Update dropdowns if relevant data
+                    if (endpoint.includes('available_groups') && data.data) {
+                        updateGroupDropdown(data.data.groups || []);
+                    }
+                    if (endpoint.includes('available_students') && data.data) {
+                        updateStudentDropdown(data.data || []);
+                    }
+                } else {
+                    output.innerHTML = `<span class="error">✗ Error (${response.status})</span>\n`;
+                    output.innerHTML += JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                output.innerHTML = `<span class="error">✗ Network Error</span>\n${error.message}`;
+            }
+        }
+        
+        // Update group dropdown
+        function updateGroupDropdown(groups) {
+            const select = document.getElementById('groupSelect');
+            select.innerHTML = '<option value="">All Groups</option>';
+            
+            groups.forEach(group => {
+                const option = document.createElement('option');
+                option.value = group;
+                option.textContent = group;
+                select.appendChild(option);
+            });
+        }
+        
+        // Update student dropdown
+        function updateStudentDropdown(students) {
+            const select = document.getElementById('studentSelect');
+            select.innerHTML = '';
+            
+            if (students.length === 0) {
+                select.innerHTML = '<option>No students found</option>';
+                return;
+            }
+            
+            students.forEach(student => {
+                const option = document.createElement('option');
+                option.value = student.id;
+                option.textContent = `${student.username} - ${student.real_name || 'N/A'} ${student.student_group ? `(${student.student_group})` : ''}`;
+                select.appendChild(option);
+            });
+        }
+        
+        // Filter students by group
+        async function filterByGroup() {
+            const group = document.getElementById('groupSelect').value;
+            const endpoint = group ? `/api/available_students?group=${encodeURIComponent(group)}` : '/api/available_students';
+            await testAPI(endpoint);
+        }
+        
+        // Load initial data
+        window.onload = async function() {
+            // First test debug endpoint
+            await testAPI('/api/debug_groups');
+            
+            // Then try to load groups
+            setTimeout(() => testAPI('/api/available_groups'), 1000);
+        };
+    </script>
+</body>
+</html>

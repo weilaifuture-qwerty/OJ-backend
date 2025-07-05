@@ -1,7 +1,10 @@
 from rest_framework import serializers
 from django.utils import timezone
+from django.db import models
 from account.models import User
+from account.serializers import UserSerializer
 from problem.models import Problem
+from problem.serializers import ProblemSerializer
 from .models import (
     AdminStudentRelation, HomeworkAssignment, HomeworkProblem,
     StudentHomework, HomeworkSubmission, HomeworkComment
@@ -51,45 +54,44 @@ class AssignStudentsSerializer(serializers.Serializer):
 class HomeworkProblemSerializer(serializers.ModelSerializer):
     problem_title = serializers.CharField(source='problem.title', read_only=True)
     problem_difficulty = serializers.CharField(source='problem.difficulty', read_only=True)
+    problem_id = serializers.IntegerField(source='problem.id', read_only=True)
+    problem_display_id = serializers.CharField(source='problem._id', read_only=True)
     
     class Meta:
         model = HomeworkProblem
-        fields = ['id', 'problem', 'problem_title', 'problem_difficulty', 
-                  'order', 'points', 'required']
+        fields = ['id', 'problem', 'problem_id', 'problem_display_id', 'problem_title', 
+                  'problem_difficulty', 'order', 'points', 'required']
 
 
 class CreateHomeworkSerializer(serializers.ModelSerializer):
-    problems = serializers.ListField(
-        child=serializers.DictField(),
+    problem_ids = serializers.ListField(
+        child=serializers.IntegerField(),
         write_only=True
     )
     student_ids = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
-        required=False
+        required=False,
+        allow_empty=True
     )
     
     class Meta:
         model = HomeworkAssignment
-        fields = ['title', 'description', 'due_date', 'problems', 'student_ids',
-                  'allow_late_submission', 'late_penalty_percent', 'max_attempts']
+        fields = ['title', 'description', 'due_date', 'problem_ids', 'student_ids',
+                  'allow_late_submission', 'late_penalty_percent', 'max_attempts', 'auto_grade']
     
     def validate_due_date(self, value):
         if value <= timezone.now():
             raise serializers.ValidationError("Due date must be in the future")
         return value
     
-    def validate_problems(self, value):
+    def validate_problem_ids(self, value):
         if not value:
             raise serializers.ValidationError("At least one problem is required")
-        
-        problem_ids = [p.get('problem_id') for p in value]
-        if not all(problem_ids):
-            raise serializers.ValidationError("Each problem must have a problem_id")
             
         # Check if all problems exist
-        existing_problems = Problem.objects.filter(id__in=problem_ids).count()
-        if existing_problems != len(problem_ids):
+        existing_problems = Problem.objects.filter(id__in=value).count()
+        if existing_problems != len(value):
             raise serializers.ValidationError("Some problem IDs are invalid")
             
         return value
@@ -195,24 +197,19 @@ class GradeHomeworkSerializer(serializers.Serializer):
 
 
 class HomeworkCommentSerializer(serializers.ModelSerializer):
-    author_username = serializers.CharField(source='author.username', read_only=True)
-    author_avatar = serializers.SerializerMethodField()
-    replies_count = serializers.IntegerField(source='replies.count', read_only=True)
+    author = serializers.CharField(source='author.username', read_only=True)
+    can_delete = serializers.SerializerMethodField()
     
     class Meta:
         model = HomeworkComment
-        fields = ['id', 'homework', 'author', 'author_username', 'author_avatar', 'content',
-                  'created_at', 'updated_at', 'is_pinned', 'parent', 'replies_count']
-        read_only_fields = ['author']
+        fields = ['id', 'author', 'content', 'created_at', 'can_delete']
     
-    def get_author_avatar(self, obj):
-        if hasattr(obj.author, 'userprofile') and obj.author.userprofile.avatar:
-            avatar_path = obj.author.userprofile.avatar
-            request = self.context.get('request')
-            if request and not avatar_path.startswith('http'):
-                return request.build_absolute_uri(avatar_path)
-            return avatar_path
-        return None
+    def get_can_delete(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        # User can delete their own comments or if they're an admin
+        return obj.author == request.user or request.user.is_admin_role()
 
 
 class CreateCommentSerializer(serializers.ModelSerializer):
@@ -227,3 +224,151 @@ class CreateCommentSerializer(serializers.ModelSerializer):
                 StudentHomework.objects.filter(student=user, homework=value).exists()):
             raise serializers.ValidationError("You don't have access to this homework")
         return value
+
+
+# API Response Serializers for frontend compatibility
+class ProblemStatusSerializer(serializers.Serializer):
+    id = serializers.IntegerField(source='id')  # HomeworkProblem ID
+    problem_id = serializers.IntegerField(source='problem.id')
+    _id = serializers.CharField(source='problem._id')
+    title = serializers.CharField(source='problem.title')
+    difficulty = serializers.CharField(source='problem.difficulty')
+    score = serializers.IntegerField(source='points')
+    status = serializers.SerializerMethodField()
+    attempts = serializers.SerializerMethodField()
+    order = serializers.IntegerField()
+    
+    def get_status(self, obj):
+        # Get submission status for this student
+        student_homework = self.context.get('student_homework')
+        if not student_homework:
+            return 'not_started'
+            
+        submission = HomeworkSubmission.objects.filter(
+            student_homework=student_homework,
+            problem=obj.problem
+        ).first()
+        
+        if not submission:
+            return 'not_started'
+        elif submission.is_accepted:
+            return 'solved'
+        else:
+            return 'attempted'
+    
+    def get_attempts(self, obj):
+        student_homework = self.context.get('student_homework')
+        if not student_homework:
+            return 0
+            
+        submission = HomeworkSubmission.objects.filter(
+            student_homework=student_homework,
+            problem=obj.problem
+        ).first()
+        
+        return submission.attempts if submission else 0
+
+
+class StudentHomeworkListSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source='homework.title')
+    description = serializers.CharField(source='homework.description')
+    due_date = serializers.DateTimeField(source='homework.due_date')
+    assigned_by = serializers.SerializerMethodField()
+    problem_count = serializers.IntegerField(source='homework.problems.count')
+    progress = serializers.SerializerMethodField()
+    grade = serializers.FloatField(source='grade_percent', allow_null=True)
+    
+    class Meta:
+        model = StudentHomework
+        fields = ['id', 'title', 'description', 'due_date', 'assigned_by', 
+                  'status', 'problem_count', 'progress', 'grade']
+    
+    def get_assigned_by(self, obj):
+        return obj.homework.created_by.username
+    
+    def get_progress(self, obj):
+        return obj.calculate_progress()
+
+
+class StudentHomeworkDetailSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField()  # StudentHomework ID
+    title = serializers.CharField(source='homework.title')
+    description = serializers.CharField(source='homework.description')
+    due_date = serializers.DateTimeField(source='homework.due_date')
+    status = serializers.CharField()
+    problems = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(source='homework.created_at')
+    max_attempts = serializers.SerializerMethodField()
+    late_penalty_percent = serializers.IntegerField(source='homework.late_penalty_percent')
+    feedback = serializers.CharField(allow_null=True, allow_blank=True)
+    total_score = serializers.SerializerMethodField()
+    earned_score = serializers.FloatField(source='total_score', allow_null=True)
+    
+    class Meta:
+        model = StudentHomework
+        fields = ['id', 'title', 'description', 'due_date', 'status', 'problems',
+                  'created_at', 'max_attempts', 'late_penalty_percent', 'feedback',
+                  'total_score', 'earned_score']
+    
+    def get_problems(self, obj):
+        homework_problems = HomeworkProblem.objects.filter(
+            homework=obj.homework
+        ).select_related('problem').order_by('order')
+        
+        problem_data = []
+        for hp in homework_problems:
+            serializer = ProblemStatusSerializer(
+                hp,
+                context={'student_homework': obj}
+            )
+            problem_data.append(serializer.data)
+        
+        return problem_data
+    
+    def get_total_score(self, obj):
+        # Calculate total possible score from all problems
+        return HomeworkProblem.objects.filter(
+            homework=obj.homework
+        ).aggregate(total=models.Sum('points'))['total'] or 0
+    
+    def get_max_attempts(self, obj):
+        # Return None if 0 (unlimited), otherwise return the value
+        return None if obj.homework.max_attempts == 0 else obj.homework.max_attempts
+
+
+class AdminHomeworkListSerializer(serializers.ModelSerializer):
+    problems = serializers.SerializerMethodField()
+    assigned_students = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = HomeworkAssignment
+        fields = ['id', 'title', 'description', 'due_date', 'created_at',
+                  'is_active', 'problems', 'assigned_students']
+    
+    def get_problems(self, obj):
+        homework_problems = HomeworkProblem.objects.filter(
+            homework=obj
+        ).select_related('problem').order_by('order')
+        
+        return [{
+            'id': hp.problem.id,
+            '_id': hp.problem._id,
+            'title': hp.problem.title
+        } for hp in homework_problems]
+    
+    def get_assigned_students(self, obj):
+        student_homework = StudentHomework.objects.filter(
+            homework=obj
+        ).select_related('student')
+        
+        return [{
+            'id': sh.student.id,
+            'username': sh.student.username,
+            'email': sh.student.email
+        } for sh in student_homework]
+
+
+class AvailableStudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']

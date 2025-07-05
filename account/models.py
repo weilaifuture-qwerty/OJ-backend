@@ -105,6 +105,7 @@ class UserProfile(models.Model):
     school = models.TextField(null=True)
     major = models.TextField(null=True)
     language = models.TextField(null=True)
+    student_group = models.CharField(max_length=100, blank=True, null=True)  # Student group/class
     # for ACM
     accepted_number = models.IntegerField(default=0)
     # for OI
