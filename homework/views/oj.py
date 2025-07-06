@@ -13,7 +13,7 @@ from ..models import (
 from ..serializers import (
     StudentHomeworkListSerializer, StudentHomeworkDetailSerializer,
     HomeworkSubmissionSerializer, SubmitHomeworkSerializer,
-    HomeworkCommentSerializer, CreateCommentSerializer
+    HomeworkCommentSerializer, CreateHomeworkCommentSerializer
 )
 
 
@@ -579,26 +579,41 @@ class HomeworkCommentsAPI(APIView):
         return self.success(serializer.data)
     
     @login_required
-    @validate_serializer(CreateCommentSerializer)
+    @validate_serializer(CreateHomeworkCommentSerializer)
     def post(self, request):
         """POST /api/homework_comments - Create a new comment"""
-        serializer = CreateCommentSerializer(
-            data=request.data,
-            context={'request': request}
+        data = request.data
+        
+        # Get homework ID from request
+        homework_id = data.get('homework_id')
+        if not homework_id:
+            return self.error("Homework ID is required")
+            
+        # Check if user has access to this homework
+        if not request.user.is_admin_role():
+            if not StudentHomework.objects.filter(
+                homework__id=homework_id,
+                student=request.user
+            ).exists():
+                return self.error("You don't have access to this homework")
+        
+        # Create comment
+        comment = HomeworkComment.objects.create(
+            homework_id=homework_id,
+            author=request.user,
+            content=data.get('content'),
+            parent_id=data.get('parent_id'),
+            is_pinned=data.get('is_pinned', False) if request.user.is_admin_role() else False
         )
         
-        if serializer.is_valid():
-            comment = serializer.save(author=request.user)
-            response_serializer = HomeworkCommentSerializer(
-                comment,
-                context={'request': request}
-            )
-            return self.success({
-                'id': comment.id,
-                'message': 'Comment added successfully'
-            })
-        
-        return self.error(serializer.errors)
+        response_serializer = HomeworkCommentSerializer(
+            comment,
+            context={'request': request}
+        )
+        return self.success({
+            'id': comment.id,
+            'message': 'Comment added successfully'
+        })
     
     @login_required
     def delete(self, request):

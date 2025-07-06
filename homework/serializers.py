@@ -198,11 +198,15 @@ class GradeHomeworkSerializer(serializers.Serializer):
 
 class HomeworkCommentSerializer(serializers.ModelSerializer):
     author = serializers.CharField(source='author.username', read_only=True)
+    author_id = serializers.IntegerField(source='author.id', read_only=True)
     can_delete = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
+    is_pinned = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = HomeworkComment
-        fields = ['id', 'author', 'content', 'created_at', 'can_delete']
+        fields = ['id', 'author', 'author_id', 'content', 'created_at', 'updated_at', 
+                  'is_pinned', 'can_delete', 'replies', 'parent']
     
     def get_can_delete(self, obj):
         request = self.context.get('request')
@@ -210,20 +214,20 @@ class HomeworkCommentSerializer(serializers.ModelSerializer):
             return False
         # User can delete their own comments or if they're an admin
         return obj.author == request.user or request.user.is_admin_role()
+    
+    def get_replies(self, obj):
+        # Only get replies for top-level comments
+        if obj.parent:
+            return []
+        replies = obj.replies.all().order_by('created_at')
+        return HomeworkCommentSerializer(replies, many=True, context=self.context).data
 
 
-class CreateCommentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HomeworkComment
-        fields = ['homework', 'content', 'parent']
-        
-    def validate_homework(self, value):
-        # Check if user has access to this homework
-        user = self.context['request'].user
-        if not (user.is_admin_role() or 
-                StudentHomework.objects.filter(student=user, homework=value).exists()):
-            raise serializers.ValidationError("You don't have access to this homework")
-        return value
+class CreateHomeworkCommentSerializer(serializers.Serializer):
+    homework_id = serializers.IntegerField(required=True)
+    content = serializers.CharField(required=True, min_length=1, max_length=5000)
+    parent_id = serializers.IntegerField(required=False, allow_null=True)
+    is_pinned = serializers.BooleanField(required=False, default=False)
 
 
 # API Response Serializers for frontend compatibility
