@@ -32,29 +32,38 @@ ssh root@your-server-ip
 
 ## Step 2: Upload Project Files
 
-### Option A: Using Git
+### Option A: Using Git (Recommended)
 ```bash
 # Install git
 apt-get update && apt-get install -y git
 
-# Clone your repository
-git clone https://github.com/your-username/your-repo.git
-cd your-repo/OJ
+# Create project directory
+mkdir -p /root/OJ
+cd /root/OJ
+
+# Clone both repositories
+git clone https://github.com/weilaifuture-qwerty/OJ-backend.git
+git clone https://github.com/weilaifuture-qwerty/OJ-frontend.git
+
+# Navigate to backend directory
+cd OJ-backend
 ```
 
 ### Option B: Using SCP
 From your local machine:
 ```bash
-# Compress the project
-tar -czf oj-deploy.tar.gz OJ/
+# Compress the projects
+tar -czf oj-deploy.tar.gz OJ-backend/ OJ-frontend/
 
 # Upload to server
 scp oj-deploy.tar.gz root@your-server-ip:/root/
 
 # On the server, extract files
 ssh root@your-server-ip
+cd /root
 tar -xzf oj-deploy.tar.gz
-cd OJ
+mv OJ-backend OJ-frontend /root/OJ/
+cd /root/OJ/OJ-backend
 ```
 
 ## Step 3: Configure Environment Variables

@@ -26,7 +26,7 @@ services:
 
   backend:
     build:
-      context: ./OnlineJudge
+      context: .
       dockerfile: Dockerfile
     container_name: oj_backend
     environment:
@@ -37,7 +37,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       JUDGE_SERVER_TOKEN: ${JUDGE_SERVER_TOKEN}
     volumes:
-      - ./OnlineJudge:/app
+      - .:/app
       - static_files:/app/static
       - media_files:/app/media
       - test_cases:/app/test_cases
@@ -56,7 +56,7 @@ services:
 
   frontend:
     build:
-      context: ./OnlineJudgeFE
+      context: ../OJ-frontend
       dockerfile: Dockerfile
     container_name: oj_frontend
     volumes:
