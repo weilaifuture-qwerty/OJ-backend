@@ -26,4 +26,3 @@ RUN chmod +x /app/manage.py
 EXPOSE 8000
 
 CMD ["gunicorn", "oj.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "300"]
-EOF < /dev/null
